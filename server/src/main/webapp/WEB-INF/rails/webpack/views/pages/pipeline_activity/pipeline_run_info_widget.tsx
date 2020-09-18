@@ -23,7 +23,7 @@ import Stream from "mithril/stream";
 import {PipelineRunInfo, Stage, StageConfigs} from "models/pipeline_activity/pipeline_activity";
 import s from "underscore.string";
 import * as Icons from "views/components/icons";
-import {Link} from "views/components/link";
+import {StageOverview} from "../../dashboard/stage_overview";
 import {BuildCauseWidget} from "./build_cause_widget";
 import {CommentWidget} from "./comment_widget";
 import styles from "./index.scss";
@@ -32,11 +32,15 @@ const classnames = bind(styles);
 
 interface PipelineRunAttrs {
   canOperatePipeline: boolean;
+  canAdministerPipeline: boolean;
+  pipelineUsingTemplate?: string;
   pipelineRunInfo: PipelineRunInfo;
   pipelineName: string;
   showBuildCaseFor: Stream<string>;
   showCommentFor: Stream<string>;
   stageConfigs: StageConfigs;
+  stageOverviewState: any;
+  showStageOverview: (pipelineName: string, pipelineCounter: string | number, stageName: string, stageCounter: string | number, status: any, e: any) => void;
   runStage: (stage: Stage) => void;
   cancelStageInstance: (stage: Stage) => void;
   addOrUpdateComment: (comment: string, counterOrLabel: string | number) => void;
@@ -45,6 +49,29 @@ interface PipelineRunAttrs {
 type StringOrNumber = string | number;
 
 export class PipelineRunWidget extends MithrilViewComponent<PipelineRunAttrs> {
+
+  public static stageStatusClass(status: string) {
+    if (!status) {
+      return;
+    }
+
+    switch (status.trim().toLowerCase()) {
+      case "building":
+        return styles.building;
+      case "failing":
+        return styles.failing;
+      case "failed":
+        return styles.failed;
+      case "cancelled":
+        return styles.cancelled;
+      case "passed":
+        return styles.passed;
+      case "waiting":
+        return styles.waiting;
+      default:
+        return styles.unknown;
+    }
+  }
   view(vnode: m.Vnode<PipelineRunAttrs>): m.Children | void | null {
     const pipelineRunInfo = vnode.attrs.pipelineRunInfo;
 
@@ -77,16 +104,60 @@ export class PipelineRunWidget extends MithrilViewComponent<PipelineRunAttrs> {
       </td>
       <td class={styles.right} data-test-id="stage-status">
         {pipelineRunInfo.stages().map((stage, index) => {
+
+          const pipelineName = stage.pipelineName();
+          const pipelineCounter = stage.pipelineCounter();
+          const stageName = stage.stageName();
+          const stageCounter = stage.stageCounter();
+
+          let optionalStageOverview: m.Children | undefined;
+
+          let isModelOpen = vnode.attrs.stageOverviewState.isOpen(pipelineName, pipelineCounter, stageName, stageCounter);
+          if (!isModelOpen && vnode.attrs.stageOverviewState.getPipelineCounter() === pipelineCounter) {
+            const previousStageCounter = `${((+stageCounter) - 1)}`;
+            const isOpenForPreviousStageInstance = vnode.attrs.stageOverviewState.isOpen(pipelineName, pipelineCounter, stageName, previousStageCounter);
+
+            if (isOpenForPreviousStageInstance) {
+              isModelOpen = true;
+              vnode.attrs.stageOverviewState.hide();
+              vnode.attrs.showStageOverview(pipelineName, pipelineCounter, stageName, stageCounter, stage.stageStatus(), {stopPropagation: () => undefined});
+            }
+          }
+
+          const isScheduled: boolean = stage.scheduled();
+
+          if (isModelOpen) {
+            // @ts-ignore
+            stage.status = stage.stageStatus();
+            // @ts-ignore
+            stage.canOperate = vnode.attrs.canOperatePipeline;
+
+            optionalStageOverview = <StageOverview pipelineName={stage.pipelineName()}
+                                                   isDisplayedOnPipelineActivityPage={true}
+                                                   canAdminister={vnode.attrs.canAdministerPipeline}
+                                                   pipelineCounter={stage.pipelineCounter()}
+                                                   stageName={stageName}
+                                                   stageCounter={stageCounter}
+                                                   stages={pipelineRunInfo.stages()}
+                                                   templateName={vnode.attrs.pipelineUsingTemplate}
+                                                   stageInstanceFromDashboard={stage}
+                                                   stageOverviewVM={vnode.attrs.stageOverviewState.model}
+                                                   stageStatus={stage.stageStatus()}/>;
+          }
+
           return <div
             data-test-id={this.dataTestId("stage-status-container", stage.stageName())}
-            class={classnames(styles.stage, {[styles.disabledIcon]: PipelineRunWidget.shouldDisableApprovalIcon(stage)})}>
+            class={classnames(styles.stageBoxPipelineActivity, {[styles.disabledIcon]: PipelineRunWidget.shouldDisableApprovalIcon(stage)})}>
             {this.getStageGateIcon(index, stage, vnode)}
             <div class={styles.stageStatusWrapper}>
               <span data-test-id={this.dataTestId("stage-status", stage.stageName())}
-                    class={classnames(PipelineRunWidget.stageStatusClass(stage.stageStatus()))}/>
-              <div class={styles.stageInfoIconWrapper}>
-                {this.getStageActions(stage, vnode)}
-              </div>
+                    onclick={(e: any) => {
+                      if (isScheduled) {
+                        return vnode.attrs.showStageOverview(pipelineName, pipelineCounter, stageName, stageCounter, stage.stageStatus(), e);
+                      }
+                    }}
+                    class={classnames(styles.stageStatus, PipelineRunWidget.stageStatusClass(stage.stageStatus()))}/>
+              {optionalStageOverview}
             </div>
           </div>;
         })}
@@ -116,29 +187,6 @@ export class PipelineRunWidget extends MithrilViewComponent<PipelineRunAttrs> {
     return stage.scheduled();
   }
 
-  private static stageStatusClass(status: string) {
-    if (!status) {
-      return;
-    }
-
-    switch (status.trim().toLowerCase()) {
-      case "building":
-        return styles.building;
-      case "failing":
-        return styles.failing;
-      case "failed":
-        return styles.failed;
-      case "cancelled":
-        return styles.cancelled;
-      case "passed":
-        return styles.passed;
-      case "waiting":
-        return styles.waiting;
-      default:
-        return styles.unknown;
-    }
-  }
-
   private static getVSMLink(vnode: m.Vnode<PipelineRunAttrs>, pipelineRunInfo: PipelineRunInfo) {
     if (pipelineRunInfo.label().toLowerCase() === "unknown") {
       return <span class={styles.disabled}>VSM</span>;
@@ -153,37 +201,6 @@ export class PipelineRunWidget extends MithrilViewComponent<PipelineRunAttrs> {
 
   private static getTimeServer(timestamp: Date) {
     return timestamp ? TimeFormatter.formatInServerTime(timestamp) : null;
-  }
-
-  private getStageActions(stage: Stage, vnode: m.Vnode<PipelineRunAttrs>): m.Children {
-    if (!stage.scheduled()) {
-      return;
-    }
-
-    const infoIcon = <Link href={`/go/pipelines/${stage.stageLocator()}`}>
-      <Icons.InfoCircle iconOnly={true} data-test-id="stage-info-icon" title="Stage details"/>
-    </Link>;
-    if (stage.getCanRun()) {
-      return <div class={styles.stageInfoIconContainer}>
-        {infoIcon}
-        <Icons.Repeat iconOnly={true}
-                      title="Rerun stage"
-                      data-test-id="rerun-stage-icon"
-                      onclick={() => vnode.attrs.runStage(stage)}/>
-      </div>;
-    }
-
-    if (stage.getCanCancel()) {
-      return <div class={styles.stageInfoIconContainer}>
-        {infoIcon}
-        <Icons.Close iconOnly={true}
-                     data-test-id="cancel-stage-icon"
-                     title="Cancel stage"
-                     onclick={() => vnode.attrs.cancelStageInstance(stage)}/>
-      </div>;
-    }
-
-    return <div class={styles.stageInfoIconContainer}>{infoIcon}</div>;
   }
 
   private getStageGateIcon(index: number, stage: Stage, vnode: m.Vnode<PipelineRunAttrs>): m.Children {

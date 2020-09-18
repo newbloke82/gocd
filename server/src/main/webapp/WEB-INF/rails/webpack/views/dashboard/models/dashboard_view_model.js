@@ -16,6 +16,7 @@
 import m from "mithril";
 import _ from "lodash";
 import Stream from "mithril/stream";
+import state from "./stage_overview_state";
 
 function FilterMixin() {
   const self = this;
@@ -126,15 +127,17 @@ export function DashboardViewModel(dashboard) {
       isOpen: (name, instanceCounter) => ((name === dropdownPipelineName) && (instanceCounter === dropdownPipelineCounter)),
 
       show: (name, instanceCounter) => {
-        dropdownPipelineName    = name;
+        dropdownPipelineName = name;
         dropdownPipelineCounter = instanceCounter;
       },
 
       hide: () => {
-        dropdownPipelineName    = undefined;
+        dropdownPipelineName = undefined;
         dropdownPipelineCounter = undefined;
       }
     },
+
+    stageOverview: state.StageOverviewState,
 
     buildCause: Stream()
   });

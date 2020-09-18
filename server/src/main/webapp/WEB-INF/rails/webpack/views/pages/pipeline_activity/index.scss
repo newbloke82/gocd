@@ -29,9 +29,8 @@ $stage-status-bar-z-index:  2;
 $stage-action-icon-z-index: 1;
 
 .pipeline-activity {
-  display:    flex;
-  overflow-x: auto;
-  width:      100%;
+  display: flex;
+  width:   100%;
 }
 
 .pipeline-activity-table {
@@ -122,27 +121,19 @@ $stage-action-icon-z-index: 1;
   color: $disabled-text-color;
 }
 
-.stage {
+.stage-box-pipeline-activity {
   max-width:       $stage-width + 50px;
   height:          100%;
   display:         flex;
   align-items:     center;
   justify-content: center;
 
-  span {
+  .stage-status {
     display:       block;
     width:         82px;
     height:        12px;
     border-radius: 2px;
     z-index:       $stage-status-bar-z-index;
-  }
-
-  i {
-    display:         flex;
-    height:          100%;
-    width:           50px;
-    justify-content: center;
-    align-items:     center;
   }
 }
 
@@ -152,43 +143,6 @@ $stage-action-icon-z-index: 1;
   position:        relative;
   flex-direction:  column;
   justify-content: center;
-
-  i {
-    display:  none;
-    width:    15px;
-    height:   15px;
-    position: relative;
-    zoom:     1;
-    color:    $icon-color;
-    z-index:  $stage-action-icon-z-index;
-  }
-
-  &:hover {
-    i {
-      padding: 0;
-      margin:  0;
-      width:   15px;
-      display: block;
-
-      &:before {
-        margin: 0;
-      }
-    }
-  }
-
-  .stage-info-icon-wrapper {
-    position: relative;
-    top:      0;
-  }
-
-  .stage-info-icon-container {
-    position:        absolute;
-    display:         flex;
-    flex-direction:  row;
-    justify-content: space-between;
-    width:           100%;
-    height:          15px;
-  }
 }
 
 .disabled-icon {
@@ -201,6 +155,7 @@ $stage-action-icon-z-index: 1;
 
 .unknown, .building, .cancelled, .failed, .passed, .waiting, .failing {
   color: $white;
+  cursor: pointer;
 
   &:before {
     position: absolute;
@@ -211,6 +166,7 @@ $stage-action-icon-z-index: 1;
 .unknown {
   background: $stage-status-unknown;
   border:     1px solid $border-color;
+  cursor:     auto;
 }
 
 .building {

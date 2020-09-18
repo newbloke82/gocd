@@ -15,7 +15,9 @@
  */
 package com.thoughtworks.go.server.materials;
 
-import com.thoughtworks.go.config.*;
+import com.thoughtworks.go.config.CruiseConfig;
+import com.thoughtworks.go.config.GoConfigWatchList;
+import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.materials.dependency.DependencyMaterial;
 import com.thoughtworks.go.config.materials.git.GitMaterial;
 import com.thoughtworks.go.config.materials.svn.SvnMaterial;
@@ -68,6 +70,7 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
     private final DependencyMaterialUpdateQueue dependencyMaterialUpdateQueue;
     private final MaintenanceModeService maintenanceModeService;
     private final SecretParamResolver secretParamResolver;
+    private final ExponentialBackoffService exponentialBackoffService;
     private final GoConfigWatchList watchList;
     private final GoConfigService goConfigService;
     private final SystemEnvironment systemEnvironment;
@@ -89,7 +92,7 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
                                  ServerHealthService serverHealthService, PostCommitHookMaterialTypeResolver postCommitHookMaterialType,
                                  MDUPerformanceLogger mduPerformanceLogger, MaterialConfigConverter materialConfigConverter,
                                  DependencyMaterialUpdateQueue dependencyMaterialUpdateQueue, MaintenanceModeService maintenanceModeService,
-                                 SecretParamResolver secretParamResolver) {
+                                 SecretParamResolver secretParamResolver, ExponentialBackoffService exponentialBackoffService) {
         this.watchList = watchList;
         this.goConfigService = goConfigService;
         this.systemEnvironment = systemEnvironment;
@@ -102,6 +105,7 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
         this.dependencyMaterialUpdateQueue = dependencyMaterialUpdateQueue;
         this.maintenanceModeService = maintenanceModeService;
         this.secretParamResolver = secretParamResolver;
+        this.exponentialBackoffService = exponentialBackoffService;
         completed.addListener(this);
     }
 
@@ -121,6 +125,13 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
             LOGGER.debug("[Material Update] [On Timer] materials IN-PROGRESS: {}, ALL-MATERIALS: {}", inProgress, materialsForUpdate);
 
             for (Material material : materialsForUpdate) {
+                BackOffResult backOffResult = exponentialBackoffService.shouldBackOff(material);
+                if (backOffResult.shouldBackOff()) {
+                    LOGGER.debug("[Material Update] [On Timer] Backing Off Material Update for: {}, failing since: {}, last failure time: {}, next retry will be attempted after: {}",
+                            material, backOffResult.getFailureStartTime(), backOffResult.getLastFailureTime(), backOffResult.getNextRetryAttempt());
+                    continue;
+                }
+
                 updateMaterial(material);
             }
         }
@@ -203,7 +214,7 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
 
         allUniquePostCommitSchedulableMaterials.stream()
                 .filter(material -> material instanceof SvnMaterial)
-                .forEach(material -> secretParamResolver.resolve((SvnMaterial) material));
+                .forEach(secretParamResolver::resolve);
     }
 
     public void registerMaterialSources(MaterialSource materialSource) {

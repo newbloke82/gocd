@@ -14,18 +14,14 @@
  * limitations under the License.
  */
 
-import classnames from "classnames";
 import {docsUrl} from "gen/gocd_version";
 import {MithrilViewComponent} from "jsx/mithril-component";
 import m from "mithril";
-import {MaterialWithFingerprint} from "models/materials/materials";
-import {CollapsiblePanel} from "views/components/collapsible_panel";
 import {FlashMessage, MessageType} from "views/components/flash_message";
-import {KeyValuePair} from "views/components/key_value_pair";
 import {Link} from "views/components/link";
-import headerStyles from "views/pages/config_repos/index.scss";
 import {MaterialsAttrs} from "views/pages/materials";
 import styles from "./index.scss";
+import {MaterialWidget} from "./material_widget";
 
 export class MaterialsWidget extends MithrilViewComponent<MaterialsAttrs> {
 
@@ -50,59 +46,11 @@ export class MaterialsWidget extends MithrilViewComponent<MaterialsAttrs> {
       </div>;
     }
     return <div data-test-id="materials-widget">
-      {vnode.attrs.materials().map((material) => <MaterialWidget material={material}/>)}
+      {vnode.attrs.materials().map((material) => <MaterialWidget material={material}
+                                                                 shouldShowPackageOrScmLink={vnode.attrs.shouldShowPackageOrScmLink}
+                                                                 triggerUpdate={vnode.attrs.triggerUpdate} onEdit={vnode.attrs.onEdit}
+                                                                 showModifications={vnode.attrs.showModifications}
+                                                                 showUsages={vnode.attrs.showUsages}/>)}
     </div>;
-  }
-}
-
-interface MaterialAttrs {
-  material: MaterialWithFingerprint;
-}
-
-export class MaterialWidget extends MithrilViewComponent<MaterialAttrs> {
-  view(vnode: m.Vnode<MaterialAttrs, this>): m.Children | void | null {
-    const test = vnode.attrs.material.attributesAsMap();
-    return <CollapsiblePanel header={<MaterialHeader {...vnode.attrs} />}>
-      <KeyValuePair data={test}/>
-    </CollapsiblePanel>;
-  }
-
-}
-
-class MaterialHeader extends MithrilViewComponent<MaterialAttrs> {
-  view(vnode: m.Vnode<MaterialAttrs, this>): m.Children | void | null {
-    return [
-      this.getIcon(vnode),
-      <div className={headerStyles.headerTitle}>
-        <h4 data-test-id="material-type" className={headerStyles.headerTitleText}>{vnode.attrs.material.typeForDisplay()}</h4>
-        <span data-test-id="material-display-name" className={headerStyles.headerTitleUrl}>{vnode.attrs.material.displayName()}</span>
-      </div>
-    ];
-  }
-
-  private getIcon(vnode: m.Vnode<MaterialAttrs, this>) {
-    let style      = styles.unknown;
-    const material = vnode.attrs.material;
-    switch (material.type()) {
-      case "git":
-        style = styles.git;
-        break;
-      case "hg":
-        style = styles.mercurial;
-        break;
-      case "svn":
-        style = styles.subversion;
-        break;
-      case "p4":
-        style = styles.perforce;
-        break;
-      case "tfs":
-        style = styles.tfs;
-        break;
-      case "package":
-        style = styles.package;
-        break;
-    }
-    return <div data-test-id="material-icon" className={classnames(styles.material, style)}/>;
   }
 }

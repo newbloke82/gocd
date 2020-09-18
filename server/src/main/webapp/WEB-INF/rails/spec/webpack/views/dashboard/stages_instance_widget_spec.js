@@ -17,6 +17,8 @@ import {TestHelper} from "views/pages/spec/test_helper";
 import {PipelineInstance} from "models/dashboard/pipeline_instance";
 import {StagesInstanceWidget} from "views/dashboard/stages_instance_widget";
 import m from "mithril";
+import {DashboardViewModel} from "../../../../webpack/views/dashboard/models/dashboard_view_model";
+import {Modal} from "views/shared/new_modal";
 
 describe("Dashboard Stages Instance Widget", () => {
 
@@ -25,10 +27,10 @@ describe("Dashboard Stages Instance Widget", () => {
 
   const pipelineInstanceJson = {
     "_links":       {
-      "self":            {
+      "self": {
         "href": "http://localhost:8153/go/api/pipelines/up42/instance/1"
       },
-      "doc":             {
+      "doc":  {
         "href": "https://api.go.cd/current/#get-pipeline-instance"
       }
     },
@@ -106,9 +108,12 @@ describe("Dashboard Stages Instance Widget", () => {
     mount();
   });
 
+  afterEach(Modal.destroyAll);
+
   function mount() {
     helper.mount(() => m(StagesInstanceWidget, {
-      stages: stagesInstance,
+      stages:        stagesInstance,
+      stageOverview: new DashboardViewModel().stageOverview
     }));
   }
 
@@ -119,17 +124,13 @@ describe("Dashboard Stages Instance Widget", () => {
     expect(stagesInstance[1]).toHaveClass('unknown');
   });
 
-  it("should link to stage details page", () => {
-    expect(helper.q('.pipeline_stage').href).toContain("/go/pipelines/up42/1/up42_stage/1");
-  });
-
   it("should not link to stage details page for stages with no run", () => {
     expect(helper.q('span.pipeline_stage')).toBeInDOM();
     expect(helper.q('span.pipeline_stage')).toHaveClass('unknown');
   });
 
   it("should show stage status on hover", () => {
-    const stages       = pipelineInstanceJson._embedded.stages;
+    const stages = pipelineInstanceJson._embedded.stages;
     const stage1Status = `${stages[0].name} (${stages[0].status})`;
     const stage2Status = `${stages[1].name} (${stages[1].status})`;
     const stage3Status = `${stages[2].name} (cancelled by: ${stages[2].cancelled_by})`;
@@ -149,6 +150,15 @@ describe("Dashboard Stages Instance Widget", () => {
 
   it("should render enabled manual gate", () => {
     expect(helper.q('.manual_gate')).not.toHaveClass('disabled');
+  });
+
+  it("should render confirmation modal when manual gate is clicked", () => {
+    expect(helper.q('.manual_gate')).not.toHaveClass('disabled');
+    helper.click(helper.q('.manual_gate'));
+
+    expect(helper.q('.modal-title', document.body)).toContainText('Trigger stage up42_stage2');
+    expect(helper.q('.manual-stage-trigger-body', document.body)).toContainText('Do you want to trigger stage');
+    expect(helper.q('.manual-stage-trigger-body', document.body)).toContainText('up42_stage2');
   });
 
   it("should render disabled manual gate when previous stage is in progress", () => {

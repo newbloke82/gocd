@@ -40,7 +40,7 @@ import urlParse from "url-parse";
 import {EncryptedValue, plainOrCipherValue} from "views/components/forms/encrypted_value";
 import {Filter} from "../maintenance_mode/material";
 
-const mapTypeToDisplayType: { [key: string]: string; } = {
+export const mapTypeToDisplayType: { [key: string]: string; } = {
   git:        "Git",
   svn:        "Subversion",
   hg:         "Mercurial",
@@ -50,6 +50,26 @@ const mapTypeToDisplayType: { [key: string]: string; } = {
   package:    "Package",
   plugin:     "Plugin"
 };
+
+function urlForDisplay(url?: string) {
+  if (!url) { return undefined;}
+
+  const parsed = urlParse(url, {});
+  // do not mask passwords
+  if (_.isEmpty(parsed.auth) || parsed.protocol.includes('ssh') || parsed.protocol.includes('svn+ssh')) {
+    return parsed.href;
+  }
+
+  if (parsed.auth.includes(":")) {
+    // mask password when username and password is provided as username:password@url
+    parsed.set('password', '******');
+  } else {
+    // mask token when credentials are provided as token@url
+    parsed.set('username', '******');
+  }
+
+  return parsed.href;
+}
 
 export class Materials {
   static fromJSON(material: MaterialJSON): Material {
@@ -104,10 +124,10 @@ export class Material extends ValidatableMixin {
         return "";
       case "git":
         // @ts-ignore
-        return  `${this.attributes()!.url()} [ ${this.attributes()!.branch()} ]`;
+        return `${urlForDisplay(this.attributes()!.url())} [ ${this.attributes()!.branch()} ]`;
       default:
         // @ts-ignore
-        return this.attributes()!.url();
+        return urlForDisplay(this.attributes()!.url());
     }
   }
 
@@ -138,7 +158,7 @@ export class Material extends ValidatableMixin {
     );
   }
 
-  checkConnection(pipelineName?: string, pipelineGroup?: string) {
+  checkConnection(pipelineName?: string, pipelineGroup?: string, configRepoId?: string) {
     const payload = this.toApiPayload();
     if (pipelineName) {
       payload.pipeline_name = pipelineName;
@@ -146,11 +166,17 @@ export class Material extends ValidatableMixin {
     if (pipelineGroup) {
       payload.pipeline_group = pipelineGroup;
     }
-    return ApiRequestBuilder.POST(
-      SparkRoutes.materialConnectionCheck(),
-      Material.API_VERSION_HEADER,
-      {payload}
-    );
+
+    let url: string, apiVersion: ApiVersion;
+    if (configRepoId) {
+      url        = SparkRoutes.configRepoConnectionCheck(configRepoId);
+      apiVersion = ApiVersion.v4;
+    } else {
+      url        = SparkRoutes.materialConnectionCheck();
+      apiVersion = Material.API_VERSION_HEADER;
+    }
+
+    return ApiRequestBuilder.POST(url, apiVersion, {payload});
   }
 
   typeForDisplay() {
@@ -172,7 +198,7 @@ export class Material extends ValidatableMixin {
       return (this.attributes() as P4MaterialAttributes).port();
     }
     // @ts-ignore
-    return this.attributes()!.url();
+    return urlForDisplay(this.attributes()!.url());
   }
 
   allErrors(): string[] {
@@ -319,8 +345,8 @@ export class BranchOrRefspecValidator extends Validator {
     if (branchOrRefspec) {
       if (branchOrRefspec.includes(":")) {
         const boundary = branchOrRefspec.indexOf(":");
-        const src = branchOrRefspec.substr(0, boundary);
-        const dst = branchOrRefspec.substr(boundary + 1);
+        const src      = branchOrRefspec.substr(0, boundary);
+        const dst      = branchOrRefspec.substr(boundary + 1);
 
         if (s.isBlank(src)) {
           this.error(entity, attr, "Refspec is missing a source ref");
@@ -613,17 +639,19 @@ export class PackageMaterialAttributes extends MaterialAttributes {
 export class PluggableScmMaterialAttributes extends MaterialAttributes {
   ref: Stream<string>;
   filter: Stream<Filter>;
+  invertFilter: Stream<boolean>;
   destination: Stream<string>;
 
-  constructor(name: string | undefined, autoUpdate: boolean | undefined, ref: string, destination: string, filter: Filter) {
+  constructor(name: string | undefined, autoUpdate: boolean | undefined, ref: string, destination: string, filter: Filter, invertFilter: boolean = false) {
     super(name, autoUpdate);
-    this.ref         = Stream(ref);
-    this.filter      = Stream(filter);
-    this.destination = Stream(destination);
+    this.ref          = Stream(ref);
+    this.filter       = Stream(filter);
+    this.invertFilter = Stream(invertFilter);
+    this.destination  = Stream(destination);
   }
 
   static fromJSON(data: PluggableScmMaterialAttributesJSON): PluggableScmMaterialAttributes {
-    const attrs = new PluggableScmMaterialAttributes(data.name, data.auto_update, data.ref, data.destination, Filter.fromJSON(data.filter));
+    const attrs = new PluggableScmMaterialAttributes(data.name, data.auto_update, data.ref, data.destination, Filter.fromJSON(data.filter), data.invert_filter);
     attrs.errors(new Errors(data.errors));
     return attrs;
   }

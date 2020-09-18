@@ -16,6 +16,7 @@
 package com.thoughtworks.go.server.service;
 
 import com.thoughtworks.go.config.CaseInsensitiveString;
+import com.thoughtworks.go.config.exceptions.BadRequestException;
 import com.thoughtworks.go.config.exceptions.EntityType;
 import com.thoughtworks.go.config.materials.PackageMaterial;
 import com.thoughtworks.go.config.materials.PluggableSCMMaterial;
@@ -30,6 +31,7 @@ import com.thoughtworks.go.config.materials.tfs.TfsMaterial;
 import com.thoughtworks.go.domain.MaterialInstance;
 import com.thoughtworks.go.domain.MaterialRevision;
 import com.thoughtworks.go.domain.MaterialRevisions;
+import com.thoughtworks.go.domain.PipelineRunIdInfo;
 import com.thoughtworks.go.domain.config.Configuration;
 import com.thoughtworks.go.domain.materials.*;
 import com.thoughtworks.go.domain.materials.git.GitMaterialInstance;
@@ -38,6 +40,7 @@ import com.thoughtworks.go.domain.materials.scm.PluggableSCMMaterialRevision;
 import com.thoughtworks.go.domain.packagerepository.PackageDefinition;
 import com.thoughtworks.go.domain.packagerepository.PackageRepositoryMother;
 import com.thoughtworks.go.helper.MaterialsMother;
+import com.thoughtworks.go.helper.ModificationsMother;
 import com.thoughtworks.go.plugin.access.packagematerial.PackageRepositoryExtension;
 import com.thoughtworks.go.plugin.access.scm.SCMExtension;
 import com.thoughtworks.go.plugin.access.scm.SCMPropertyConfiguration;
@@ -47,10 +50,12 @@ import com.thoughtworks.go.plugin.api.material.packagerepository.PackageConfigur
 import com.thoughtworks.go.plugin.api.material.packagerepository.PackageRevision;
 import com.thoughtworks.go.plugin.api.material.packagerepository.RepositoryConfiguration;
 import com.thoughtworks.go.security.GoCipher;
+import com.thoughtworks.go.server.dao.FeedModifier;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.persistence.MaterialRepository;
 import com.thoughtworks.go.server.service.materials.GitPoller;
 import com.thoughtworks.go.server.service.materials.MaterialPoller;
+import com.thoughtworks.go.server.service.materials.PluggableSCMMaterialPoller;
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
 import com.thoughtworks.go.server.util.Pagination;
@@ -74,9 +79,11 @@ import java.util.Map;
 import static com.thoughtworks.go.domain.packagerepository.PackageDefinitionMother.create;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.git;
 import static java.util.Arrays.asList;
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.fail;
+import static java.util.Collections.emptyList;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.hamcrest.Matchers.*;
+import static org.junit.Assert.*;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.*;
 import static org.mockito.MockitoAnnotations.initMocks;
 
@@ -400,6 +407,204 @@ public class MaterialServiceTest {
         assertThat(gotModifications, is(modifications));
     }
 
+    @Test
+    public void shouldGetLatestModificationWithMaterial() {
+        MaterialInstance instance = MaterialsMother.gitMaterial("http://example.com/gocd.git").createMaterialInstance();
+        Modification modification = ModificationsMother.withModifiedFileWhoseNameLengthIsOneK();
+        modification.setMaterialInstance(instance);
+        ArrayList<Modification> mods = new ArrayList<>();
+        mods.add(modification);
+
+        when(materialRepository.getLatestModificationForEachMaterial()).thenReturn(mods);
+
+        Map<String, Modification> modificationsMap = materialService.getLatestModificationForEachMaterial();
+
+        assertEquals(modificationsMap.size(), 1);
+        assertThat(modificationsMap.keySet(), containsInAnyOrder(instance.getFingerprint()));
+        assertEquals(modificationsMap.get(instance.getFingerprint()), modification);
+    }
+
+    @Test
+    public void shouldReturnEmptyMapIfNoMaterialAndModificationFound() {
+        when(materialRepository.getLatestModificationForEachMaterial()).thenReturn(emptyList());
+
+        Map<String, Modification> modificationsMap = materialService.getLatestModificationForEachMaterial();
+
+        assertEquals(modificationsMap.size(), 0);
+    }
+
+    @Test
+    public void history_shouldCallDaoToFetchLatestModificationData() {
+        GitMaterialConfig materialConfig = git("http://test.com");
+        GitMaterialInstance gitMaterialInstance = new GitMaterialInstance("http://test.com", null, null, null, "flyweight");
+        Modifications modifications = new Modifications();
+        modifications.add(new Modification("user", "comment 1", "email", new DateTime().minusHours(1).toDate(), "revision"));
+        modifications.add(new Modification("user", "comment 2", "email", new DateTime().minusHours(2).toDate(), "revision"));
+        modifications.add(new Modification("user", "comment 3", "email", new DateTime().minusHours(3).toDate(), "revision"));
+
+        when(materialRepository.findMaterialInstance(materialConfig)).thenReturn(gitMaterialInstance);
+        when(materialRepository.loadHistory(anyLong(), any(), anyLong(), anyInt())).thenReturn(modifications);
+
+        List<Modification> gotModifications = materialService.getModificationsFor(materialConfig, "", 0, 0, 3);
+
+        verify(materialRepository).loadHistory(anyLong(), eq(FeedModifier.Latest), eq(0L), eq(3));
+        assertThat(gotModifications, is(modifications));
+    }
+
+    @Test
+    public void history_shouldCallDaoToFetchModificationDataAfterTheGivenCursor() {
+        GitMaterialConfig materialConfig = git("http://test.com");
+        GitMaterialInstance gitMaterialInstance = new GitMaterialInstance("http://test.com", null, null, null, "flyweight");
+        Modifications modifications = new Modifications();
+        modifications.add(new Modification("user", "comment 1", "email", new DateTime().minusHours(1).toDate(), "revision"));
+
+        when(materialRepository.findMaterialInstance(materialConfig)).thenReturn(gitMaterialInstance);
+        when(materialRepository.loadHistory(anyLong(), any(), anyLong(), anyInt())).thenReturn(modifications);
+
+        List<Modification> gotModifications = materialService.getModificationsFor(materialConfig, "", 2, 0, 3);
+
+        verify(materialRepository).loadHistory(anyLong(), eq(FeedModifier.After), eq(2L), eq(3));
+    }
+
+    @Test
+    public void history_shouldCallDaoToFetchModificationDataBeforeTheGivenCursor() {
+        GitMaterialConfig materialConfig = git("http://test.com");
+        GitMaterialInstance gitMaterialInstance = new GitMaterialInstance("http://test.com", null, null, null, "flyweight");
+        Modifications modifications = new Modifications();
+        modifications.add(new Modification("user", "comment 1", "email", new DateTime().minusHours(1).toDate(), "revision"));
+
+        when(materialRepository.findMaterialInstance(materialConfig)).thenReturn(gitMaterialInstance);
+        when(materialRepository.loadHistory(anyLong(), any(), anyLong(), anyInt())).thenReturn(modifications);
+
+        List<Modification> gotModifications = materialService.getModificationsFor(materialConfig, "", 0, 2, 3);
+
+        verify(materialRepository).loadHistory(anyLong(), eq(FeedModifier.Before), eq(2L), eq(3));
+    }
+
+    @Test
+    public void history_shouldThrowIfTheAfterCursorIsInvalid() {
+        GitMaterialConfig materialConfig = git("http://test.com");
+        GitMaterialInstance gitMaterialInstance = new GitMaterialInstance("http://test.com", null, null, null, "flyweight");
+
+        when(materialRepository.findMaterialInstance(materialConfig)).thenReturn(gitMaterialInstance);
+
+        assertThatCode(() -> materialService.getModificationsFor(materialConfig, "", -10, 0, 3))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("The query parameter 'after', if specified, must be a positive integer.");
+
+        verify(materialRepository).findMaterialInstance(materialConfig);
+        verifyNoMoreInteractions(materialRepository);
+    }
+
+    @Test
+    public void history_shouldThrowIfTheBeforeCursorIsInvalid() {
+        GitMaterialConfig materialConfig = git("http://test.com");
+        GitMaterialInstance gitMaterialInstance = new GitMaterialInstance("http://test.com", null, null, null, "flyweight");
+
+        when(materialRepository.findMaterialInstance(materialConfig)).thenReturn(gitMaterialInstance);
+
+        assertThatCode(() -> materialService.getModificationsFor(materialConfig, "", 0, -10, 3))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("The query parameter 'before', if specified, must be a positive integer.");
+
+        verify(materialRepository).findMaterialInstance(materialConfig);
+        verifyNoMoreInteractions(materialRepository);
+    }
+
+    @Test
+    public void shouldCallDaoToFetchLatestAndOlderModification() {
+        GitMaterialConfig materialConfig = git("http://test.com");
+        GitMaterialInstance gitMaterialInstance = new GitMaterialInstance("http://test.com", null, null, null, "flyweight");
+        PipelineRunIdInfo value = new PipelineRunIdInfo(1, 2);
+
+        when(materialRepository.findMaterialInstance(materialConfig)).thenReturn(gitMaterialInstance);
+        when(materialRepository.getOldestAndLatestModificationId(anyLong(), anyString())).thenReturn(value);
+
+        PipelineRunIdInfo info = materialService.getLatestAndOldestModification(materialConfig, "");
+
+        verify(materialRepository).getOldestAndLatestModificationId(anyLong(), eq(""));
+        assertThat(info, is(value));
+    }
+
+    @Test
+    public void shouldReturnNullIfNoInstanceIsPresent() {
+        GitMaterialConfig materialConfig = git("http://test.com");
+
+        when(materialRepository.findMaterialInstance(materialConfig)).thenReturn(null);
+
+        PipelineRunIdInfo info = materialService.getLatestAndOldestModification(materialConfig, "");
+
+        verify(materialRepository, never()).getOldestAndLatestModificationId(anyLong(), anyString());
+        assertThat(info, is(nullValue()));
+    }
+
+    @Test
+    public void findMatchingMods_shouldCallDaoToFetchLatestMatchingMods() {
+        GitMaterialConfig config = git("http://test.com");
+        GitMaterialInstance instance = new GitMaterialInstance("http://test.com", null, null, null, "flyweight");
+        Modifications modifications = new Modifications();
+        modifications.add(new Modification("user", "comment 1", "email", new DateTime().minusHours(1).toDate(), "revision"));
+        modifications.add(new Modification("user", "comment 2", "email", new DateTime().minusHours(2).toDate(), "revision"));
+        modifications.add(new Modification("user", "comment 3", "email", new DateTime().minusHours(3).toDate(), "revision"));
+
+        when(materialRepository.findMaterialInstance(config)).thenReturn(instance);
+        when(materialRepository.findMatchingModifications(anyLong(), anyString(), any(FeedModifier.class), anyLong(), anyInt())).thenReturn(modifications);
+
+        List<Modification> result = materialService.getModificationsFor(config, "comment", 0, 0, 10);
+
+        verify(materialRepository).findMatchingModifications(eq(instance.getId()), eq("comment"), eq(FeedModifier.Latest), eq(0L), eq(10));
+        assertThat(result, is(modifications));
+    }
+
+    @Test
+    public void findMatchingMods_shouldCallDaoToFetchMatchingModsAfterCursor() {
+        GitMaterialConfig config = git("http://test.com");
+        GitMaterialInstance instance = new GitMaterialInstance("http://test.com", null, null, null, "flyweight");
+        Modifications modifications = new Modifications();
+        modifications.add(new Modification("user", "comment 1", "email", new DateTime().minusHours(1).toDate(), "revision"));
+        modifications.add(new Modification("user", "comment 2", "email", new DateTime().minusHours(2).toDate(), "revision"));
+        modifications.add(new Modification("user", "comment 3", "email", new DateTime().minusHours(3).toDate(), "revision"));
+
+        when(materialRepository.findMaterialInstance(config)).thenReturn(instance);
+        when(materialRepository.findMatchingModifications(anyLong(), anyString(), any(FeedModifier.class), anyLong(), anyInt())).thenReturn(modifications);
+
+        List<Modification> result = materialService.getModificationsFor(config, "comment", 3, 0, 10);
+
+        verify(materialRepository).findMatchingModifications(eq(instance.getId()), eq("comment"), eq(FeedModifier.After), eq(3L), eq(10));
+        assertThat(result, is(modifications));
+    }
+
+    @Test
+    public void findMatchingMods_shouldCallDaoToFetchMatchingModsBeforeCursor() {
+        GitMaterialConfig config = git("http://test.com");
+        GitMaterialInstance instance = new GitMaterialInstance("http://test.com", null, null, null, "flyweight");
+        Modifications modifications = new Modifications();
+        modifications.add(new Modification("user", "comment 1", "email", new DateTime().minusHours(1).toDate(), "revision"));
+        modifications.add(new Modification("user", "comment 2", "email", new DateTime().minusHours(2).toDate(), "revision"));
+        modifications.add(new Modification("user", "comment 3", "email", new DateTime().minusHours(3).toDate(), "revision"));
+
+        when(materialRepository.findMaterialInstance(config)).thenReturn(instance);
+        when(materialRepository.findMatchingModifications(anyLong(), anyString(), any(FeedModifier.class), anyLong(), anyInt())).thenReturn(modifications);
+
+        List<Modification> result = materialService.getModificationsFor(config, "comment", 0, 3, 10);
+
+        verify(materialRepository).findMatchingModifications(eq(instance.getId()), eq("comment"), eq(FeedModifier.Before), eq(3L), eq(10));
+        assertThat(result, is(modifications));
+    }
+
+    @Test
+    public void findMatchingMods_shouldReturnNullIfMaterialIsNotPresent() {
+        GitMaterialConfig material = git("http://test.com");
+
+        when(materialRepository.findMaterialInstance(material)).thenReturn(null);
+
+        List<Modification> result = materialService.getModificationsFor(material, "comment", 0, 0, 10);
+
+        assertThat(result, is(nullValue()));
+        verify(materialRepository).findMaterialInstance(material);
+        verifyNoMoreInteractions(materialRepository);
+    }
+
     private void assertHasModification(MaterialRevisions materialRevisions, boolean b) {
         HgMaterial hgMaterial = new HgMaterial("foo.com", null);
         when(materialRepository.findLatestModification(hgMaterial)).thenReturn(materialRevisions);
@@ -416,4 +621,51 @@ public class MaterialServiceTest {
         }
     }
 
+    @Test
+    public void latestModification_shouldResolveSecretsForPluggableScmMaterial() {
+        PluggableSCMMaterial pluggableSCMMaterial = spy(new PluggableSCMMaterial());
+        MaterialService serviceSpy = spy(materialService);
+        PluggableSCMMaterialPoller poller = mock(PluggableSCMMaterialPoller.class);
+
+        doReturn(PluggableSCMMaterial.class).when(serviceSpy).getMaterialClass(pluggableSCMMaterial);
+        doReturn(true).when(pluggableSCMMaterial).hasSecretParams();
+        doReturn(poller).when(serviceSpy).getPollerImplementation(pluggableSCMMaterial);
+        when(poller.latestModification(any(), any(), any())).thenReturn(new ArrayList<>());
+
+        serviceSpy.latestModification(pluggableSCMMaterial, null, null);
+
+        verify(secretParamResolver).resolve(pluggableSCMMaterial);
+    }
+
+    @Test
+    public void modificationsSince_shouldResolveSecretsForPluggableScmMaterial() {
+        PluggableSCMMaterial pluggableSCMMaterial = spy(new PluggableSCMMaterial());
+        MaterialService serviceSpy = spy(materialService);
+        PluggableSCMMaterialPoller poller = mock(PluggableSCMMaterialPoller.class);
+
+        doReturn(PluggableSCMMaterial.class).when(serviceSpy).getMaterialClass(pluggableSCMMaterial);
+        doReturn(true).when(pluggableSCMMaterial).hasSecretParams();
+        doReturn(poller).when(serviceSpy).getPollerImplementation(pluggableSCMMaterial);
+        when(poller.latestModification(any(), any(), any())).thenReturn(new ArrayList<>());
+
+        serviceSpy.modificationsSince(pluggableSCMMaterial, null, null, null);
+
+        verify(secretParamResolver).resolve(pluggableSCMMaterial);
+    }
+
+    @Test
+    public void checkout_shouldResolveSecretsForPluggableScmMaterial() {
+        PluggableSCMMaterial pluggableSCMMaterial = spy(new PluggableSCMMaterial());
+        MaterialService serviceSpy = spy(materialService);
+        PluggableSCMMaterialPoller poller = mock(PluggableSCMMaterialPoller.class);
+
+        doReturn(PluggableSCMMaterial.class).when(serviceSpy).getMaterialClass(pluggableSCMMaterial);
+        doReturn(true).when(pluggableSCMMaterial).hasSecretParams();
+        doReturn(poller).when(serviceSpy).getPollerImplementation(pluggableSCMMaterial);
+        when(poller.latestModification(any(), any(), any())).thenReturn(new ArrayList<>());
+
+        serviceSpy.checkout(pluggableSCMMaterial, null, null, null);
+
+        verify(secretParamResolver).resolve(pluggableSCMMaterial);
+    }
 }

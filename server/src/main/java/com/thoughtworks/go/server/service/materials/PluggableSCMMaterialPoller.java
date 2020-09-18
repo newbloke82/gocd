@@ -93,7 +93,7 @@ public class PluggableSCMMaterialPoller implements MaterialPoller<PluggableSCMMa
                 pluggableSCMMaterialRevision.getTimestamp(), null, null,
                 pluggableSCMMaterialRevision.getData(), null);
         Result result = scmExtension.checkout(material.getPluginId(), scmPropertyConfiguration, baseDir.getAbsolutePath(), scmRevision);
-        if(!result.isSuccessful())
+        if (!result.isSuccessful())
             throw new RuntimeException("Failed to perform checkout on pluggable SCM");
     }
 
@@ -105,7 +105,7 @@ public class PluggableSCMMaterialPoller implements MaterialPoller<PluggableSCMMa
 
     private void populateConfiguration(Configuration configuration, com.thoughtworks.go.plugin.api.config.Configuration pluginConfiguration) {
         for (ConfigurationProperty configurationProperty : configuration) {
-            pluginConfiguration.add(new SCMProperty(configurationProperty.getConfigurationKey().getName(), configurationProperty.getValue()));
+            pluginConfiguration.add(new SCMProperty(configurationProperty.getConfigurationKey().getName(), configurationProperty.getResolvedValue()));
         }
     }
 

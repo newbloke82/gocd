@@ -19,6 +19,8 @@ import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
 import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.PipelineConfig;
+import com.thoughtworks.go.config.SecretParamAware;
+import com.thoughtworks.go.config.SecretParams;
 import com.thoughtworks.go.domain.MaterialInstance;
 import com.thoughtworks.go.domain.MaterialRevision;
 import com.thoughtworks.go.domain.config.ConfigurationProperty;
@@ -29,11 +31,8 @@ import com.thoughtworks.go.domain.packagerepository.PackageDefinition;
 import com.thoughtworks.go.util.command.ConsoleOutputStreamConsumer;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 import com.thoughtworks.go.util.json.JsonHelper;
-import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -43,7 +42,7 @@ import static java.lang.String.format;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 import static org.apache.commons.lang3.StringUtils.upperCase;
 
-public class PackageMaterial extends AbstractMaterial {
+public class PackageMaterial extends AbstractMaterial implements SecretParamAware {
     public static final String TYPE = "PackageMaterial";
 
     private String packageId;
@@ -169,32 +168,18 @@ public class PackageMaterial extends AbstractMaterial {
         context.setProperty(upperCase(format("GO_PACKAGE_%s_LABEL", escapeEnvironmentVariable(getName().toString()))), materialRevision.getRevision().getRevision(), false);
         for (ConfigurationProperty configurationProperty : getPackageDefinition().getRepository().getConfiguration()) {
             context.setProperty(getEnvironmentVariableKey("GO_REPO_%s_%s", configurationProperty.getConfigurationKey().getName()),
-                    configurationProperty.getValue(), configurationProperty.isSecure());
+                    configurationProperty.getResolvedValue(), configurationProperty.isSecure() || configurationProperty.hasSecretParams());
         }
         for (ConfigurationProperty configurationProperty : getPackageDefinition().getConfiguration()) {
             context.setProperty(getEnvironmentVariableKey("GO_PACKAGE_%s_%s", configurationProperty.getConfigurationKey().getName()),
-                    configurationProperty.getValue(), configurationProperty.isSecure());
+                    configurationProperty.getResolvedValue(), configurationProperty.isSecure() || configurationProperty.hasSecretParams());
         }
         HashMap<String, String> additionalData = materialRevision.getLatestModification().getAdditionalDataMap();
         if (additionalData != null) {
             for (Map.Entry<String, String> entry : additionalData.entrySet()) {
-                boolean isSecure = false;
-                for (EnvironmentVariableContext.EnvironmentVariable secureEnvironmentVariable : context.getSecureEnvironmentVariables()) {
-                    String urlEncodedValue = null;
-                    try {
-                        urlEncodedValue = URLEncoder.encode(secureEnvironmentVariable.value(), "UTF-8");
-                    } catch (UnsupportedEncodingException e) {
-                    }
-                    boolean isSecureEnvironmentVariableEncoded = !StringUtils.isBlank(urlEncodedValue) && !secureEnvironmentVariable.value().equals(urlEncodedValue);
-                    if (isSecureEnvironmentVariableEncoded && entry.getValue().contains(urlEncodedValue)) {
-                        isSecure = true;
-                        break;
-                    }
-                }
-
                 String key = entry.getKey();
                 String value = entry.getValue();
-                context.setProperty(getEnvironmentVariableKey("GO_PACKAGE_%s_%s", key), value, isSecure);
+                context.setProperty(getEnvironmentVariableKey("GO_PACKAGE_%s_%s", key), value, dataHasSecureValue(context, entry));
             }
         }
     }
@@ -266,8 +251,8 @@ public class PackageMaterial extends AbstractMaterial {
     @Override
     public void updateFromConfig(MaterialConfig materialConfig) {
         super.updateFromConfig(materialConfig);
-        this.getPackageDefinition().setConfiguration(((PackageMaterialConfig)materialConfig).getPackageDefinition().getConfiguration());
-        this.getPackageDefinition().getRepository().setConfiguration(((PackageMaterialConfig)materialConfig).getPackageDefinition().getRepository().getConfiguration());
+        this.getPackageDefinition().setConfiguration(((PackageMaterialConfig) materialConfig).getPackageDefinition().getConfiguration());
+        this.getPackageDefinition().getRepository().setConfiguration(((PackageMaterialConfig) materialConfig).getPackageDefinition().getRepository().getConfiguration());
     }
 
     @Override
@@ -281,11 +266,7 @@ public class PackageMaterial extends AbstractMaterial {
 
         PackageMaterial that = (PackageMaterial) o;
 
-        if (this.getFingerprint() != null ? !this.getFingerprint().equals(that.getFingerprint()) : that.getFingerprint() != null) {
-            return false;
-        }
-
-        return true;
+        return this.getFingerprint() != null ? this.getFingerprint().equals(that.getFingerprint()) : that.getFingerprint() == null;
     }
 
     @Override
@@ -297,5 +278,21 @@ public class PackageMaterial extends AbstractMaterial {
 
     public void setFingerprint(String fingerprint) {
         this.fingerprint = fingerprint;
+    }
+
+    @Override
+    public boolean hasSecretParams() {
+        if (this.packageDefinition == null) {
+            return false;
+        }
+        return this.packageDefinition.hasSecretParams();
+    }
+
+    @Override
+    public SecretParams getSecretParams() {
+        if (this.packageDefinition == null) {
+            return new SecretParams();
+        }
+        return this.packageDefinition.getSecretParams();
     }
 }

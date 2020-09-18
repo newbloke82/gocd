@@ -16,72 +16,17 @@
 import {docsUrl} from "gen/gocd_version";
 import m from "mithril";
 import Stream from "mithril/stream";
-import {MaterialWithFingerprint, MaterialWithFingerprintJSON, MaterialWithFingerprints} from "models/materials/materials";
+import {Materials, MaterialWithFingerprintJSON} from "models/materials/materials";
 import {TestHelper} from "views/pages/spec/test_helper";
-import styles from "../index.scss";
-import {MaterialsWidget, MaterialWidget} from "../materials_widget";
-
-describe('MaterialWidgetSpec', () => {
-  const helper = new TestHelper();
-  let material: MaterialWithFingerprint;
-
-  afterEach((done) => helper.unmount(done));
-  beforeEach(() => {
-    material = MaterialWithFingerprint.fromJSON(git());
-  });
-
-  it('should display the name of the material with type', () => {
-    mount();
-
-    expect(helper.byTestId("material-type")).toBeInDOM();
-    expect(helper.textByTestId("material-type")).toBe('Git');
-    expect(helper.textByTestId("material-display-name")).toBe('some-name');
-  });
-
-  [
-    {type: "git", classname: styles.git},
-    {type: "hg", classname: styles.mercurial},
-    {type: "p4", classname: styles.perforce},
-    {type: "svn", classname: styles.subversion},
-    {type: "tfs", classname: styles.tfs},
-    {type: "dependency", classname: styles.unknown},
-    {type: "package", classname: styles.package},
-    {type: "plugin", classname: styles.unknown}
-  ].forEach((parameter) => {
-    it(`should display icon for ${parameter.type} `, () => {
-      material.type(parameter.type);
-      mount();
-
-      expect(helper.byTestId("material-icon")).toHaveClass(parameter.classname);
-    });
-  });
-
-  function mount() {
-    helper.mount(() => <MaterialWidget material={material}/>);
-  }
-
-  function git() {
-    return {
-      type:        "git",
-      fingerprint: "some-fingerprint",
-      attributes:  {
-        name:          "some-name",
-        auto_update:   true,
-        url:           "git@github.com:sample_repo/example.git",
-        branch:        "master",
-        shallow_clone: false
-      }
-    } as MaterialWithFingerprintJSON;
-  }
-});
+import {MaterialsWidget} from "../materials_widget";
 
 describe('MaterialsWidgetSpec', () => {
   const helper = new TestHelper();
-  let materials: MaterialWithFingerprints;
+  let materials: Materials;
 
   afterEach((done) => helper.unmount(done));
   beforeEach(() => {
-    materials = new MaterialWithFingerprints();
+    materials = new Materials();
   });
 
   it('should display help text when no materials have been defined', () => {
@@ -99,6 +44,22 @@ describe('MaterialsWidgetSpec', () => {
   });
 
   function mount() {
-    helper.mount(() => <MaterialsWidget materials={Stream(materials)}/>);
+    helper.mount(() => <MaterialsWidget materials={Stream(materials)} shouldShowPackageOrScmLink={false}
+                                        triggerUpdate={jasmine.createSpy("triggerUpdate")} onEdit={jasmine.createSpy("onEdit")}
+                                        showModifications={jasmine.createSpy("showModifications")} showUsages={jasmine.createSpy("showUsages")}/>);
   }
 });
+
+export function git() {
+  return {
+    type:        "git",
+    fingerprint: "some-fingerprint",
+    attributes:  {
+      name:          "some-name",
+      auto_update:   true,
+      url:           "git@github.com:sample_repo/example.git",
+      branch:        "master",
+      shallow_clone: false
+    }
+  } as MaterialWithFingerprintJSON;
+}

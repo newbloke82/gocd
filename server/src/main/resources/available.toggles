@@ -17,22 +17,8 @@
       "value": false
     },
     {
-      "key": "branch_support",
-      "value": false
-    },
-    {
       "key": "use_rails_template_authorization_page",
       "description": "Use rails based templates authorization page in the UI. Default is false.",
-      "value": false
-    },
-    {
-      "key": "use_rails_version_infos_api",
-      "description": "Use rails based version infos API. Default is false.",
-      "value": false
-    },
-    {
-      "key": "show_materials_spa",
-      "description": "Show materials spa in menu as well allow users to visit it. Default is false.",
       "value": false
     }
   ]

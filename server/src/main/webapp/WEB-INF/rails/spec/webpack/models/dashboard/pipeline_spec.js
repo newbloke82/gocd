@@ -34,7 +34,7 @@ describe("Dashboard", () => {
       expect(pipeline.name).toBe(pipelineJson.name);
 
       expect(pipeline.canAdminister).toBe(true);
-      expect(pipeline.settingsPath).toBe(`/go/admin/pipelines/${pipelineJson.name}/general`);
+      expect(pipeline.settingsPath).toBe(`/go/admin/pipelines/${pipelineJson.name}/edit#!${pipelineJson.name}/general`);
 
       expect(pipeline.historyPath).toBe(`/go/pipeline/activity/${pipelineJson.name}`);
       expect(pipeline.instances.length).toEqual(pipelineJson._embedded.instances.length);
@@ -96,6 +96,16 @@ describe("Dashboard", () => {
       const instanceCounters = pipeline.getInstanceCounters();
       expect(instanceCounters.length).toEqual(1);
       expect(instanceCounters).toEqual([1]);
+    });
+
+    it("should answer whether pipeline is defined using template", () => {
+      const pipeline         = new Pipeline(pipelineJson);
+      expect(pipeline.isUsingTemplate).toEqual(true);
+    });
+
+    it("should return template name", () => {
+      const pipeline         = new Pipeline(pipelineJson);
+      expect(pipeline.templateName).toEqual("build-project");
     });
 
     it("should return the trigger tooltip text when first stage is building", () => {
@@ -301,6 +311,10 @@ describe("Dashboard", () => {
       "locked":                   false,
       "can_unlock":               true,
       "pause_info":               pauseInfo,
+      "template_info": {
+        "is_using_template": true,
+        "template_name":     "build-project"
+      },
       "can_administer":           true,
       "can_operate":              canOperate,
       "can_pause":                canPause,

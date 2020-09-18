@@ -894,6 +894,10 @@ describe("Dashboard Pipeline Widget", () => {
       "can_operate":            canOperate,
       "can_pause":              canPause,
       "pause_info":             pauseInfo,
+      "template_info": {
+        "is_using_template": false,
+        "template_name":     null
+      },
       "from_config_repo":       fromConfigRepo,
       "_embedded":              {
         "instances": pipelineInstances
@@ -942,6 +946,7 @@ describe("Dashboard Pipeline Widget", () => {
       doRefreshImmediately,
       operationMessages: dashboardViewModel.operationMessages,
       dropdown:          dashboardViewModel.dropdown,
+      stageOverview:     dashboardViewModel.stageOverview,
       buildCause:        dashboardViewModel.buildCause
     }));
   }

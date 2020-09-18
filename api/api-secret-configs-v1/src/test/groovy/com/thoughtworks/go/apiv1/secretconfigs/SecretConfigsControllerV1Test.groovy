@@ -34,6 +34,7 @@ import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult
 import com.thoughtworks.go.spark.AdminUserSecurity
 import com.thoughtworks.go.spark.ControllerTrait
+import com.thoughtworks.go.spark.DeprecatedApiTrait
 import com.thoughtworks.go.spark.SecurityServiceTrait
 import groovy.json.JsonBuilder
 import org.junit.jupiter.api.BeforeEach
@@ -51,7 +52,7 @@ import static org.mockito.ArgumentMatchers.eq
 import static org.mockito.Mockito.*
 import static org.mockito.MockitoAnnotations.initMocks
 
-class SecretConfigsControllerV1Test implements SecurityServiceTrait, ControllerTrait<SecretConfigsControllerV1> {
+class SecretConfigsControllerV1Test implements SecurityServiceTrait, ControllerTrait<SecretConfigsControllerV1>, DeprecatedApiTrait {
 
   @Mock
   SecretConfigService secretConfigService

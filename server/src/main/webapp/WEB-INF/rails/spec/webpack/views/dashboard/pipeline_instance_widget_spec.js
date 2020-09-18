@@ -97,9 +97,10 @@ describe("Dashboard Pipeline Instance Widget", () => {
 
     helper.mount(() => m(PipelineInstanceWidget, {
       instance,
-      buildCause:   dashboardViewModel.buildCause,
-      dropdown:     dashboardViewModel.dropdown,
-      trackingTool: {link: "http://example.com/${ID}", regex: "#(\\d+)"},
+      buildCause:    dashboardViewModel.buildCause,
+      dropdown:      dashboardViewModel.dropdown,
+      stageOverview: dashboardViewModel.stageOverview,
+      trackingTool:  {link: "http://example.com/${ID}", regex: "#(\\d+)"},
       pipelineName
     }));
   });
@@ -202,6 +203,10 @@ describe("Dashboard Pipeline Instance Widget", () => {
         "last_updated_timestamp": 1510299695473,
         "locked":                 false,
         "can_pause":              true,
+        "template_info": {
+          "is_using_template": false,
+          "template_name":     null
+        },
         "pause_info":             {
           "paused":       false,
           "paused_by":    null,

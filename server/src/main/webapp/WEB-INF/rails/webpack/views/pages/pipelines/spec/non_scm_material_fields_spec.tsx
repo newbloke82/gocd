@@ -376,6 +376,16 @@ describe('PluginFieldsSpec', () => {
     expect(helper.byTestId('selected-scm-details')).toBeInDOM();
   });
 
+  it('should render advanced settings', () => {
+    helper.mount(() => <PluginFields material={material} pluginInfos={pluginInfos} scms={scms} showLocalWorkingCopyOptions={true}/>);
+
+    assertLabelledInputsPresent(helper, {
+      "alternate-checkout-path":                                             "Alternate Checkout Path",
+      "denylist":                                                            "Denylist",
+      "invert-the-file-filter-e-g-a-denylist-becomes-an-allowlist-instead":  "Invert the file filter, e.g. a Denylist becomes an Allowlist instead."
+    });
+  });
+
   function assertConfigsPresent(helper: TestHelper, parentElementSelector: string, idsToValueMap: { [key: string]: string }) {
     const keys = Object.keys(idsToValueMap);
     expect(keys.length > 0).toBe(true);

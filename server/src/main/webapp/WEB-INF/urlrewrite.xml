@@ -24,10 +24,27 @@
 
 <urlrewrite>
   <rule>
+    <name>Internal Materials URL for listing modifications</name>
+    <from>^/api/internal/materials/([^/]+)/modifications(/?)$</from>
+    <to last="true">/spark/api/internal/materials/${escape:$1}/modifications</to>
+  </rule>
+
+  <rule>
+    <name>Internal Materials URL</name>
+    <from>^/api/internal/materials(/?)$</from>
+    <to last="true">/spark/api/internal/materials</to>
+  </rule>
+
+  <rule>
+    <name>Internal Materials URL for usages</name>
+    <from>^/api/internal/materials/([^/]+)/(usages|trigger_update)(/?)$</from>
+    <to last="true">/spark/api/internal/materials/${escape:$1}/${escape:$2}</to>
+  </rule>
+
+  <rule>
     <name>Update Check URLs</name>
     <from>^/(api/version_infos/.*)$</from>
-    <run class="com.thoughtworks.go.server.SparkOrRailsToggle" method="versionInfoAPIs"/>
-    <to last="true">/%{attribute:sparkOrRails}/$1</to>
+    <to last="true">/spark/$1</to>
   </rule>
 
   <rule>
@@ -869,7 +886,7 @@
 
   <rule>
     <name>Spark Config Repos Internal Operations API</name>
-    <from>^/api/internal/config_repos/([^/]+)/(trigger_update|status|definitions)(/?)</from>
+    <from>^/api/internal/config_repos/([^/]+)/(material_test|trigger_update|status|definitions)(/?)</from>
     <to last="true">/spark/api/internal/config_repos/${escape:$1}/${escape:$2}</to>
   </rule>
 
@@ -881,7 +898,7 @@
 
   <rule>
     <name>Spark Config Repos Operations API</name>
-    <from>^/api/admin/config_repos/([^/]+)/(trigger_update|status|definitions)(/?)</from>
+    <from>^/api/admin/config_repos/([^/]+)/(material_test|trigger_update|status|definitions)(/?)</from>
     <to last="true">/spark/api/admin/config_repos/${escape:$1}/${escape:$2}</to>
   </rule>
 

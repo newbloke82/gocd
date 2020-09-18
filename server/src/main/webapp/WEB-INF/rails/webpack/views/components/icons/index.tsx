@@ -251,6 +251,24 @@ export class AngleDoubleRight extends Icon {
   }
 }
 
+export class CancelStage extends Icon {
+  constructor() {
+    super(styles.cancelStage, "Cancel Stage");
+  }
+}
+
+export class ConsoleLog extends Icon {
+  constructor() {
+    super(styles.consoleLog, "Console Log");
+  }
+}
+
+export class List extends Icon {
+  constructor() {
+    super(styles.list, "List");
+  }
+}
+
 export class IconGroup extends MithrilViewComponent<Attrs> {
   view(vnode: m.Vnode<Attrs>) {
     return (

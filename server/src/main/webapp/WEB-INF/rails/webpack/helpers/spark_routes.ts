@@ -20,6 +20,18 @@ import {PluginInfoQuery} from "models/shared/plugin_infos_new/plugin_info_crud";
 
 export class SparkRoutes {
 
+  static staleVersionInfoPath() {
+    return "/go/api/version_infos/stale";
+  }
+
+  static latestVersionInfoPath() {
+    return "/go/api/version_infos/latest_version";
+  }
+
+  static updateServerVersionInfoPath() {
+    return "/go/api/version_infos/go_server";
+  }
+
   static serverHealthMessagesPath() {
     return `/go/api/server_health_messages`;
   }
@@ -184,6 +196,10 @@ export class SparkRoutes {
 
   static materialConnectionCheck(): string {
     return `/go/api/admin/internal/material_test`;
+  }
+
+  static configRepoConnectionCheck(id: string): string {
+    return `/go/api/internal/config_repos/${id}/material_test`;
   }
 
   static configRepoRevisionStatusPath(id: string): string {
@@ -458,12 +474,28 @@ export class SparkRoutes {
     return `/go/pipelines/value_stream_map/${pipelineName}/${counter}`;
   }
 
-  static runStage(pipelineName: string, counter: string, stageName: string) {
+  static runStage(pipelineName: string, counter: string | number, stageName: string) {
     return `/go/api/stages/${pipelineName}/${counter}/${stageName}/run`;
+  }
+
+  static rerunFailedJobs(pipelineName: string, pipelineCounter: string | number, stageName: string, stageCounter: string | number) {
+    return `/go/api/stages/${pipelineName}/${pipelineCounter}/${stageName}/${stageCounter}/run-failed-jobs`;
+  }
+
+  static rerunSelectedJobs(pipelineName: string, pipelineCounter: string | number, stageName: string, stageCounter: string | number) {
+    return `/go/api/stages/${pipelineName}/${pipelineCounter}/${stageName}/${stageCounter}/run-selected-jobs`;
+  }
+
+  static getStageInstance(pipelineName: string, pipelineCounter: string | number, stageName: string, stageCounter: number | string) {
+    return `/go/api/stages/${pipelineName}/${pipelineCounter}/${stageName}/${stageCounter}`;
   }
 
   static cancelStageInstance(pipelineName: string, pipelineCounter: string, stageName: string, stageCounter: number) {
     return `/go/api/stages/${pipelineName}/${pipelineCounter}/${stageName}/${stageCounter}/cancel`;
+  }
+
+  static getStageHistory(pipelineName: string, stageName: string) {
+    return `/go/api/stages/${pipelineName}/${stageName}/history`;
   }
 
   static commentOnPipelineInstance(pipelineName: string, pipelineCounter: string | number) {
@@ -551,7 +583,13 @@ export class SparkRoutes {
     return '/go/api/admin/internal/scms/verify_connection';
   }
 
-  static packageRepositoriesSPA() {
+  static packageRepositoriesSPA(repo?: string, pkg?: string) {
+    if (repo) {
+      if (pkg) {
+        return `/go/admin/package_repositories#!${repo}/packages/${pkg}`;
+      }
+      return `/go/admin/package_repositories#!${repo}`;
+    }
     return '/go/admin/package_repositories';
   }
 
@@ -571,7 +609,10 @@ export class SparkRoutes {
     return `/go/api/admin/scms/${scm_name}/usages`;
   }
 
-  static pluggableScmSPA() {
+  static pluggableScmSPA(scm?: string) {
+    if (scm) {
+      return `/go/admin/scms#!${scm}`;
+    }
     return '/go/admin/scms';
   }
 
@@ -579,11 +620,32 @@ export class SparkRoutes {
     return `/go/api/admin/templates/${id}/authorization`;
   }
 
-  static pipelineEditPath(stageParent: string, pipelineName: string, tab: string ): string {
-    return `/go/admin/${stageParent}/${pipelineName}/${tab}`;
+  static pipelineEditPath(stageParent: string, pipelineName: string, tab: string): string {
+    return `/go/admin/${stageParent}/${pipelineName}/edit#!${pipelineName}/${tab}`;
   }
 
   static getAllMaterials(): string {
-    return '/go/api/config/materials';
+    return '/go/api/internal/materials';
+  }
+
+  static getMaterialUsages(fingerprint: string) {
+    return `/go/api/internal/materials/${fingerprint}/usages`;
+  }
+
+  static getMaterialTriggerPath(fingerprint: string) {
+    return `/go/api/internal/materials/${fingerprint}/trigger_update`;
+  }
+
+  static materialsVsmLink(fingerprint: string, revision: string) {
+    return `/go/materials/value_stream_map/${fingerprint}/${revision}`;
+  }
+
+  static getModifications(fingerprint: string, searchPattern?: string) {
+    const queryParams = new URLSearchParams();
+    queryParams.append("page_size", "20");
+    if (searchPattern) {
+      queryParams.append("pattern", searchPattern.trim());
+    }
+    return `/go/api/internal/materials/${fingerprint}/modifications?${queryParams}`;
   }
 }

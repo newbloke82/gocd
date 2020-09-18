@@ -24,6 +24,7 @@ import com.thoughtworks.go.domain.materials.*;
 import com.thoughtworks.go.domain.materials.dependency.DependencyMaterialInstance;
 import com.thoughtworks.go.server.cache.CacheKeyGenerator;
 import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.dao.FeedModifier;
 import com.thoughtworks.go.server.database.Database;
 import com.thoughtworks.go.server.database.QueryExtensions;
 import com.thoughtworks.go.server.service.MaterialConfigConverter;
@@ -53,7 +54,9 @@ import java.math.BigInteger;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static com.thoughtworks.go.server.persistence.MaterialQueries.loadModificationQuery;
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.hibernate.criterion.Restrictions.eq;
 import static org.hibernate.criterion.Restrictions.isNull;
 
@@ -90,7 +93,7 @@ public class MaterialRepository extends HibernateDaoSupport {
         this.cacheKeyGenerator = new CacheKeyGenerator(getClass());
     }
 
-public List<Modification> getModificationsForPipelineRange(final String pipelineName,
+    public List<Modification> getModificationsForPipelineRange(final String pipelineName,
                                                                final Integer fromCounter,
                                                                final Integer toCounter) {
         return (List<Modification>) getHibernateTemplate().execute((HibernateCallback) session -> {
@@ -162,7 +165,7 @@ public List<Modification> getModificationsForPipelineRange(final String pipeline
                     + "     INNER JOIN materials m ON mods.materialId = m.id"
                     + " WHERE pmr.pipelineId IN (:ids)");
 
-        List<Object[]> allModifications = query.
+            List<Object[]> allModifications = query.
                     addEntity("mods", Modification.class).
                     addScalar("pmrPipelineId", new LongType()).
                     addScalar("pmrPipelineName", new StringType()).
@@ -211,7 +214,7 @@ public List<Modification> getModificationsForPipelineRange(final String pipeline
         return CollectionUtil.reverse(lookedUpToParentMap);
     }
 
-public MaterialRevisions findMaterialRevisionsForPipeline(long pipelineId) {
+    public MaterialRevisions findMaterialRevisionsForPipeline(long pipelineId) {
         List<PipelineMaterialRevision> revisions = findPipelineMaterialRevisions(pipelineId);
         MaterialRevisions materialRevisions = new MaterialRevisions();
         for (PipelineMaterialRevision revision : revisions) {
@@ -353,11 +356,11 @@ public MaterialRevisions findMaterialRevisionsForPipeline(long pipelineId) {
         return (MaterialRepository.class.getName() + "_pipelinePMRs_" + pipelineId).intern();
     }
 
-List<Modification> findMaterialRevisionsForMaterial(long id) {
+    List<Modification> findMaterialRevisionsForMaterial(long id) {
         return (List<Modification>) getHibernateTemplate().find("FROM Modification WHERE materialId = ?", new Object[]{id});
     }
 
-List<Modification> findModificationsFor(PipelineMaterialRevision pmr) {
+    List<Modification> findModificationsFor(PipelineMaterialRevision pmr) {
         String cacheKey = pmrModificationsKey(pmr);
         List<Modification> modifications = (List<Modification>) goCache.get(cacheKey);
         if (modifications == null) {
@@ -1024,5 +1027,83 @@ List<Modification> findModificationsFor(PipelineMaterialRevision pmr) {
     public File folderFor(Material material) {
         MaterialInstance materialInstance = this.findOrCreateFrom(material);
         return new File(new File("pipelines", "flyweight"), materialInstance.getFlyweightName());
+    }
+
+    public List<Modification> getLatestModificationForEachMaterial() {
+        String queryString = "SELECT mods.* " +
+                "FROM (" +
+                "   SELECT MAX(id) OVER (PARTITION BY materialid) as max_id, * " +
+                "   FROM modifications " +
+                ") mods " +
+                "JOIN materials m ON mods.materialid=m.id " +
+                "WHERE mods.id=mods.max_id;";
+        return (List<Modification>) getHibernateTemplate().execute((HibernateCallback) session -> {
+            SQLQuery query = session.createSQLQuery(queryString);
+            return query.addEntity("mods", Modification.class)
+                    .list();
+        });
+    }
+
+    public List<Modification> loadHistory(long materialId, FeedModifier modifier, long cursor, Integer pageSize) {
+        Map<String, Object> params = Map.of(
+                "materialId", materialId,
+                "size", pageSize,
+                "cursor", cursor
+        );
+
+        String queryString = loadModificationQuery(modifier);
+
+        return (List<Modification>) getHibernateTemplate().execute((HibernateCallback) session -> {
+            SQLQuery query = session.createSQLQuery(queryString);
+            query.setProperties(params);
+            return query.addEntity("mods", Modification.class)
+                    .list();
+        });
+    }
+
+    public PipelineRunIdInfo getOldestAndLatestModificationId(long materialId, String pattern) {
+        String queryString = "SELECT MAX(modifications.id) as latestRunId, MIN(modifications.id) as oldestRunId " +
+                "FROM modifications " +
+                "WHERE modifications.materialid = :materialId ";
+        Map<String, Object> params = new HashMap<>();
+        params.put("materialId", materialId);
+        if (isNotBlank(pattern)) {
+            queryString = queryString +
+                    "  AND (LOWER(modifications.comment) LIKE :pattern " +
+                    "  OR LOWER(modifications.userName) LIKE :pattern " +
+                    "  OR LOWER(modifications.revision) LIKE :pattern ) ";
+
+            params.put("pattern", "%" + pattern.toLowerCase() + "%");
+        }
+        String finalQueryString = queryString;
+        Object[] info = (Object[]) getHibernateTemplate().execute((HibernateCallback) session -> {
+            SQLQuery query = session.createSQLQuery(finalQueryString);
+            query.setProperties(params);
+            return query.addScalar("latestRunId", new LongType())
+                    .addScalar("oldestRunId", new LongType())
+                    .uniqueResult();
+        });
+        if (info == null || info[0] == null || info[1] == null) {
+            return null;
+        }
+        return new PipelineRunIdInfo((long) info[0], (long) info[1]);
+    }
+
+    public List<Modification> findMatchingModifications(long materialId, String pattern, FeedModifier modifier, long cursor, Integer pageSize) {
+        Map<String, Object> params = Map.of(
+                "materialId", materialId,
+                "pattern", "%" + pattern.toLowerCase() + "%",
+                "size", pageSize,
+                "cursor", cursor
+        );
+
+        String finalQueryString = MaterialQueries.loadModificationMatchingPatternQuery(modifier);
+
+        return (List<Modification>) getHibernateTemplate().execute((HibernateCallback) session -> {
+            SQLQuery query = session.createSQLQuery(finalQueryString);
+            query.setProperties(params);
+            return query.addEntity("modifications", Modification.class)
+                    .list();
+        });
     }
 }

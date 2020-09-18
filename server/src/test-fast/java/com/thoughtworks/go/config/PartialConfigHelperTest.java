@@ -19,6 +19,7 @@ package com.thoughtworks.go.config;
 import com.thoughtworks.go.config.remote.ConfigRepoConfig;
 import com.thoughtworks.go.config.remote.PartialConfig;
 import com.thoughtworks.go.config.remote.RepoConfigOrigin;
+import com.thoughtworks.go.domain.config.Arguments;
 import com.thoughtworks.go.server.service.EntityHashes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,6 +87,24 @@ class PartialConfigHelperTest {
         List<PartialConfig> b = asList(git("2"), svn("2"));
         assertFalse(helper.isEquivalent(a, b));
         assertFalse(helper.isEquivalent(a, Collections.emptyList()));
+    }
+
+    @Test
+    void isEquivalent_CollectionPartialConfig_shouldNotFailWhenSerializationToXMLFails() {
+        when(hasher.digestPartial(any(PartialConfig.class))).thenThrow(new RuntimeException());
+
+        ExecTask invalidExecTask = new ExecTask("docker", new Arguments(new Argument(null)));
+        JobConfig invalidJob = new JobConfig("up42_job");
+        invalidJob.addTask(invalidExecTask);
+
+        ConfigRepoConfig repo = createConfigRepoConfig(svnMaterialConfig(), "plugin", "id");
+        PartialConfig partialConfig = withPipeline("p", new RepoConfigOrigin(repo, "git"));
+        partialConfig.getGroups().get(0).get(0).first().getJobs().add(invalidJob);
+
+        List<PartialConfig> a = asList(partialConfig, git("git"));
+        List<PartialConfig> b = Collections.emptyList();
+
+        assertFalse(helper.isEquivalent(a, b));
     }
 
     private PartialConfig git(String name) {

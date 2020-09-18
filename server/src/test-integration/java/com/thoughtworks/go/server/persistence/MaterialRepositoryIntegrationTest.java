@@ -31,14 +31,18 @@ import com.thoughtworks.go.config.materials.perforce.P4Material;
 import com.thoughtworks.go.config.materials.perforce.P4MaterialConfig;
 import com.thoughtworks.go.config.materials.svn.SvnMaterial;
 import com.thoughtworks.go.config.materials.svn.SvnMaterialConfig;
+import com.thoughtworks.go.config.materials.tfs.TfsMaterial;
 import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.domain.buildcause.BuildCause;
 import com.thoughtworks.go.domain.config.Configuration;
 import com.thoughtworks.go.domain.config.ConfigurationProperty;
 import com.thoughtworks.go.domain.materials.*;
+import com.thoughtworks.go.domain.materials.mercurial.HgMaterialInstance;
 import com.thoughtworks.go.domain.materials.packagematerial.PackageMaterialInstance;
+import com.thoughtworks.go.domain.materials.perforce.P4MaterialInstance;
 import com.thoughtworks.go.domain.materials.scm.PluggableSCMMaterialInstance;
 import com.thoughtworks.go.domain.materials.svn.SvnMaterialInstance;
+import com.thoughtworks.go.domain.materials.tfs.TfsMaterialInstance;
 import com.thoughtworks.go.domain.packagerepository.ConfigurationPropertyMother;
 import com.thoughtworks.go.domain.packagerepository.PackageDefinitionMother;
 import com.thoughtworks.go.domain.packagerepository.PackageRepository;
@@ -47,6 +51,7 @@ import com.thoughtworks.go.domain.scm.SCMMother;
 import com.thoughtworks.go.helper.*;
 import com.thoughtworks.go.server.cache.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
+import com.thoughtworks.go.server.dao.FeedModifier;
 import com.thoughtworks.go.server.dao.PipelineSqlMapDao;
 import com.thoughtworks.go.server.database.Database;
 import com.thoughtworks.go.server.domain.Username;
@@ -62,6 +67,7 @@ import com.thoughtworks.go.util.json.JsonHelper;
 import com.thoughtworks.go.utils.SerializationTester;
 import org.hibernate.SessionFactory;
 import org.hibernate.criterion.DetachedCriteria;
+import org.joda.time.DateTime;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -84,6 +90,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.Predicate;
 
+import static com.thoughtworks.go.helper.ModificationsMother.EMAIL_ADDRESS;
+import static com.thoughtworks.go.helper.ModificationsMother.MOD_USER;
 import static com.thoughtworks.go.util.GoConstants.DEFAULT_APPROVED_BY;
 import static java.util.Arrays.asList;
 import static org.hamcrest.Matchers.*;
@@ -1314,6 +1322,342 @@ public class MaterialRepositoryIntegrationTest {
         });
 
         assertThat(repo.getTotalModificationsFor(materialInstance), is(new Long(count + 1)));
+    }
+
+    @Test
+    public void shouldFetchModificationsWithMaterial() {
+        SvnMaterial material = MaterialsMother.svnMaterial("http://username:password@localhost");
+        MaterialRevisions materialRevisions = saveModifications(material, 1);
+        Modifications modificationList = materialRevisions.getModifications(material);
+        Modification expectedModification = modificationList.get(0);
+
+        List<Modification> modifications = repo.getLatestModificationForEachMaterial();
+
+        assertThat(modifications.size(), is(1));
+        Modification modification = modifications.get(0);
+
+        assertModificationAreEqual(modification, expectedModification);
+
+        MaterialInstance instance = modification.getMaterialInstance();
+
+        assertThat(instance, instanceOf(SvnMaterialInstance.class));
+        assertThat(instance.getFingerprint(), is(material.getFingerprint()));
+        assertThat(instance.getUrl(), is(material.getUrl()));
+        assertThat(instance.getUsername(), is(material.getUserName()));
+        assertThat(instance.getBranch(), isEmptyOrNullString());
+        assertThat(instance.getCheckExternals(), is(material.isCheckExternals()));
+    }
+
+    @Test
+    public void shouldFetchDetailsRelatedToHg() {
+        HgMaterial material = MaterialsMother.hgMaterial("http://username:password@localhost");
+        material.setBranch("master");
+        MaterialRevisions materialRevisions = saveModifications(material, 1);
+        Modifications modificationList = materialRevisions.getModifications(material);
+
+        List<Modification> modifications = repo.getLatestModificationForEachMaterial();
+        assertModificationAreEqual(modificationList.get(0), modifications.get(0));
+
+        MaterialInstance instance = modifications.get(0).getMaterialInstance();
+
+        assertThat(instance, instanceOf(HgMaterialInstance.class));
+        assertThat(instance.getFingerprint(), is(material.getFingerprint()));
+        assertThat(instance.getUrl(), is(material.getUrl()));
+        assertThat(instance.getUsername(), is(material.getUserName()));
+        assertThat(instance.getBranch(), is(material.getBranch()));
+    }
+
+    @Test
+    public void shouldFetchDetailsRelatedToP4() {
+        P4Material material = new P4Material("localhost:1666", "view");
+        MaterialRevisions materialRevisions = saveModifications(material, 1);
+        Modifications modificationList = materialRevisions.getModifications(material);
+
+        List<Modification> modifications = repo.getLatestModificationForEachMaterial();
+
+        assertThat(modifications.size(), is(1));
+        assertModificationAreEqual(modifications.get(0), modificationList.get(0));
+
+        MaterialInstance instance = modifications.get(0).getMaterialInstance();
+
+        assertThat(instance, instanceOf(P4MaterialInstance.class));
+        assertThat(instance.getFingerprint(), is(material.getFingerprint()));
+        assertThat(instance.getUrl(), is(material.getUrl()));
+        assertThat(instance.getUsername(), is(material.getUserName()));
+        assertThat(instance.getView(), is(material.getView()));
+        assertThat(instance.getUseTickets(), is(material.getUseTickets()));
+    }
+
+    @Test
+    public void shouldFetchDetailsRelatedToTfs() {
+        TfsMaterial material = MaterialsMother.tfsMaterial("http://tfs.com");
+        MaterialRevisions materialRevisions = saveModifications(material, 1);
+        Modifications modificationList = materialRevisions.getModifications(material);
+
+        List<Modification> modifications = repo.getLatestModificationForEachMaterial();
+
+        assertThat(modifications.size(), is(1));
+        assertModificationAreEqual(modifications.get(0), modificationList.get(0));
+
+        MaterialInstance instance = modifications.get(0).getMaterialInstance();
+
+        assertThat(instance, instanceOf(TfsMaterialInstance.class));
+        assertThat(instance.getFingerprint(), is(material.getFingerprint()));
+        assertThat(instance.getUrl(), is(material.getUrl()));
+        assertThat(instance.getUsername(), is(material.getUserName()));
+        assertThat(instance.getProjectPath(), is(material.getProjectPath()));
+        assertThat(instance.getDomain(), is(material.getDomain()));
+    }
+
+    @Test
+    public void shouldFetchDetailsRelatedToPackage() {
+        PackageMaterial material = MaterialsMother.packageMaterial();
+        MaterialRevisions materialRevisions = saveModifications(material, 1);
+        Modifications modificationList = materialRevisions.getModifications(material);
+
+        List<Modification> modifications = repo.getLatestModificationForEachMaterial();
+
+        assertThat(modifications.size(), is(1));
+        assertModificationAreEqual(modifications.get(0), modificationList.get(0));
+
+        MaterialInstance instance = modifications.get(0).getMaterialInstance();
+
+        assertThat(instance, instanceOf(PackageMaterialInstance.class));
+        assertThat(instance.getFingerprint(), is(material.getFingerprint()));
+        assertThat(instance.getAdditionalData(), isEmptyOrNullString());
+        PackageMaterial packageMaterial = JsonHelper.fromJson(instance.getConfiguration(), PackageMaterial.class);
+        assertThat(packageMaterial, is(material));
+    }
+
+    @Test
+    public void shouldFetchDetailsRelatedToPluginMaterial() {
+        PluggableSCMMaterial material = MaterialsMother.pluggableSCMMaterial();
+        MaterialRevisions materialRevisions = saveModifications(material, 1);
+        Modifications modificationList = materialRevisions.getModifications(material);
+
+        List<Modification> modifications = repo.getLatestModificationForEachMaterial();
+
+        assertThat(modifications.size(), is(1));
+        assertModificationAreEqual(modifications.get(0), modificationList.get(0));
+
+        MaterialInstance instance = modifications.get(0).getMaterialInstance();
+
+        assertThat(instance, instanceOf(PluggableSCMMaterialInstance.class));
+        assertThat(instance.getFingerprint(), is(material.getFingerprint()));
+        assertThat(instance.getAdditionalData(), isEmptyOrNullString());
+        PluggableSCMMaterial pluggableSCMMaterial = JsonHelper.fromJson(instance.getConfiguration(), PluggableSCMMaterial.class);
+        assertThat(pluggableSCMMaterial, is(material));
+    }
+
+    @Test
+    public void listHistory_shouldFetchLatestHistoryForAGivenMaterial() {
+        SvnMaterial material = MaterialsMother.svnMaterial("http://username:password@localhost");
+        MaterialRevisions materialRevisions = saveModifications(material, 5);
+
+        Modifications mods = materialRevisions.getModifications(material);
+        //modifications gets updated with the material instance which contains the id
+        long materialId = mods.get(0).getMaterialInstance().getId();
+
+        List<Modification> modifications = repo.loadHistory(materialId, FeedModifier.Latest, 0, 3);
+
+        assertThat(modifications.size(), is(3));
+        // this works because internally we reverse the list before saving in the DB(MaterialRepository#758)
+        assertModificationAreEqualWithId(mods.get(0), modifications.get(0));
+        assertModificationAreEqualWithId(mods.get(1), modifications.get(1));
+        assertModificationAreEqualWithId(mods.get(2), modifications.get(2));
+    }
+
+    @Test
+    public void listHistory_shouldFetchHistoryAfterTheSuppliedCursor() {
+        SvnMaterial material = MaterialsMother.svnMaterial("http://username:password@localhost");
+        MaterialRevisions materialRevisions = saveModifications(material, 5);
+
+        Modifications mods = materialRevisions.getModifications(material);
+        //modifications gets updated with the material instance which contains the id
+        long materialId = mods.get(0).getMaterialInstance().getId();
+
+        // Give me the older instances
+        List<Modification> modifications = repo.loadHistory(materialId, FeedModifier.After, mods.get(2).getId(), 3);
+
+        assertThat(modifications.size(), is(2));
+        assertModificationAreEqualWithId(mods.get(3), modifications.get(0));
+        assertModificationAreEqualWithId(mods.get(4), modifications.get(1));
+    }
+
+    @Test
+    public void listHistory_shouldFetchHistoryBeforeTheSuppliedCursor() {
+        SvnMaterial material = MaterialsMother.svnMaterial("http://username:password@localhost");
+        MaterialRevisions materialRevisions = saveModifications(material, 5);
+
+        Modifications mods = materialRevisions.getModifications(material);
+        //modifications gets updated with the material instance which contains the id
+        long materialId = mods.get(0).getMaterialInstance().getId();
+
+        // Give me the newer instances
+        List<Modification> modifications = repo.loadHistory(materialId, FeedModifier.Before, mods.get(2).getId(), 3);
+
+        assertThat(modifications.size(), is(2));
+        assertModificationAreEqualWithId(mods.get(0), modifications.get(0));
+        assertModificationAreEqualWithId(mods.get(1), modifications.get(1));
+    }
+
+    @Test
+    public void shouldReturnLatestAndOldestModificationID() {
+        SvnMaterial material = MaterialsMother.svnMaterial("http://username:password@localhost");
+        MaterialRevisions materialRevisions = saveModifications(material, 5);
+
+        Modifications mods = materialRevisions.getModifications(material);
+        //modifications gets updated with the material instance which contains the id
+        long materialId = mods.get(0).getMaterialInstance().getId();
+
+        PipelineRunIdInfo info = repo.getOldestAndLatestModificationId(materialId, "");
+
+        assertThat(info, not(nullValue()));
+        assertThat(info.getLatestRunId(), is(mods.get(0).getId()));
+        assertThat(info.getOldestRunId(), is(mods.get(4).getId()));
+    }
+
+    @Test
+    public void shouldReturnNullAsLatestAndOlderModIDIfPatternDoesNotMatch() {
+        SvnMaterial material = MaterialsMother.svnMaterial("http://username:password@localhost");
+        MaterialRevisions materialRevisions = saveModifications(material, 5);
+
+        Modifications mods = materialRevisions.getModifications(material);
+        //modifications gets updated with the material instance which contains the id
+        long materialId = mods.get(0).getMaterialInstance().getId();
+
+        PipelineRunIdInfo info = repo.getOldestAndLatestModificationId(materialId, "revision");
+
+        assertThat(info, is(nullValue()));
+    }
+
+    @Test
+    public void shouldReturnLatestAndOldestModificationIDBasedOnPattern() {
+        GitMaterial material = MaterialsMother.gitMaterial("http://example.com/gocd");
+        MaterialRevisions materialRevisions = new MaterialRevisions();
+        List<Modification> mods = new ArrayList<>();
+        mods.add(new Modification("user 1", "hello world", EMAIL_ADDRESS, new DateTime().minusHours(1).toDate(), "Revisions-matches"));
+        mods.add(new Modification("user 2", "this will match as well - yellow", EMAIL_ADDRESS, new DateTime().minusHours(2).toDate(), "Revision-also-matches"));
+        mods.add(new Modification("user 3", "this should match as well", EMAIL_ADDRESS, new DateTime().minusHours(3).toDate(), "Revision-hello"));
+        mods.add(new Modification("user 4", "some comment", EMAIL_ADDRESS, new DateTime().minusHours(4).toDate(), "revisions-which-will-not-match"));
+
+        materialRevisions.addRevision(material, mods);
+
+        dbHelper.saveRevs(materialRevisions);
+        //modifications gets updated with the material instance which contains the id
+        long materialId = mods.get(0).getMaterialInstance().getId();
+
+        PipelineRunIdInfo info = repo.getOldestAndLatestModificationId(materialId, "ello");
+
+        assertThat(info, not(nullValue()));
+        assertThat(info.getLatestRunId(), is(mods.get(0).getId()));
+        assertThat(info.getOldestRunId(), is(mods.get(2).getId()));
+    }
+
+    @Test
+    public void shouldReturnLatestMatchingMods() {
+        GitMaterial material = MaterialsMother.gitMaterial("http://example.com/gocd");
+        MaterialRevisions materialRevisions = new MaterialRevisions();
+        List<Modification> mods = new ArrayList<>();
+        mods.add(new Modification("user 1", "hello world", EMAIL_ADDRESS, new DateTime().minusHours(1).toDate(), "Revisions-matches"));
+        mods.add(new Modification("user 2", "this will match as well - yellow", EMAIL_ADDRESS, new DateTime().minusHours(2).toDate(), "Revision-also-matches"));
+        mods.add(new Modification("user 3", "this should match as well", EMAIL_ADDRESS, new DateTime().minusHours(3).toDate(), "Revision-hello"));
+        mods.add(new Modification("user 4", "some comment", EMAIL_ADDRESS, new DateTime().minusHours(4).toDate(), "revisions-which-will-not-match"));
+
+        materialRevisions.addRevision(material, mods);
+
+        dbHelper.saveRevs(materialRevisions);
+        //modifications gets updated with the material instance which contains the id
+        long materialId = mods.get(0).getMaterialInstance().getId();
+
+        List<Modification> matchingMods = repo.findMatchingModifications(materialId, "ello", FeedModifier.Latest, 0, 10);
+
+        assertThat(matchingMods.size(), is(3));
+        assertModificationAreEqual(matchingMods.get(0), mods.get(0));
+        assertModificationAreEqual(matchingMods.get(1), mods.get(1));
+        assertModificationAreEqual(matchingMods.get(2), mods.get(2));
+    }
+
+    @Test
+    public void shouldReturnMatchingModsIrrespectiveOfCase() {
+        GitMaterial material = MaterialsMother.gitMaterial("http://example.com/gocd");
+        MaterialRevisions materialRevisions = new MaterialRevisions();
+        List<Modification> mods = new ArrayList<>();
+        mods.add(new Modification("user 1", "this will match", EMAIL_ADDRESS, new DateTime().minusHours(1).toDate(), "Revisions-matches"));
+        mods.add(new Modification("user 2", "this wont", EMAIL_ADDRESS, new DateTime().minusHours(2).toDate(), "Revision-not-matches"));
+        mods.add(new Modification("user 3", "this also wont", EMAIL_ADDRESS, new DateTime().minusHours(3).toDate(), "Revision-hello"));
+        mods.add(new Modification("user 4", "this should match as well", EMAIL_ADDRESS, new DateTime().minusHours(4).toDate(), "revisions-which-will-match"));
+
+        materialRevisions.addRevision(material, mods);
+
+        dbHelper.saveRevs(materialRevisions);
+        //modifications gets updated with the material instance which contains the id
+        long materialId = mods.get(0).getMaterialInstance().getId();
+
+        List<Modification> matchingMods = repo.findMatchingModifications(materialId, "revisions", FeedModifier.Latest, 0, 10);
+
+        assertThat(matchingMods.size(), is(2));
+        assertModificationAreEqual(matchingMods.get(0), mods.get(0));
+        assertModificationAreEqual(matchingMods.get(1), mods.get(3));
+    }
+
+    @Test
+    public void shouldReturnMatchingModsAfterSaidCursor() {
+        GitMaterial material = MaterialsMother.gitMaterial("http://example.com/example_gocd");
+        MaterialRevisions materialRevisions = saveModifications(material, 5);
+
+        Modifications mods = materialRevisions.getModifications(material);
+        //modifications gets updated with the material instance which contains the id
+        long materialId = mods.get(0).getMaterialInstance().getId();
+
+        List<Modification> matchingMods = repo.findMatchingModifications(materialId, "comment", FeedModifier.After, mods.get(2).getId(), 10);
+
+        assertThat(matchingMods.size(), is(2));
+        assertModificationAreEqual(matchingMods.get(0), mods.get(3));
+        assertModificationAreEqual(matchingMods.get(1), mods.get(4));
+    }
+
+    @Test
+    public void shouldReturnMatchingModsBeforeSaidCursor() {
+        GitMaterial material = MaterialsMother.gitMaterial("http://example.com/gocd_test");
+        MaterialRevisions materialRevisions = saveModifications(material, 5);
+
+        Modifications mods = materialRevisions.getModifications(material);
+        //modifications gets updated with the material instance which contains the id
+        long materialId = mods.get(0).getMaterialInstance().getId();
+
+        List<Modification> matchingMods = repo.findMatchingModifications(materialId, "comment", FeedModifier.Before, mods.get(2).getId(), 10);
+
+        assertThat(matchingMods.size(), is(2));
+        assertModificationAreEqual(matchingMods.get(0), mods.get(0));
+        assertModificationAreEqual(matchingMods.get(1), mods.get(1));
+    }
+
+    private MaterialRevisions saveModifications(Material material, int count) {
+        MaterialRevisions materialRevisions = new MaterialRevisions();
+        List<Modification> mods = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            Modification mod = new Modification(MOD_USER, "Dummy comment: " + i, EMAIL_ADDRESS, new DateTime().minusHours(i).toDate(), "Rev: " + i);
+            mods.add(mod);
+        }
+
+        materialRevisions.addRevision(material, mods);
+
+        dbHelper.saveRevs(materialRevisions);
+        return materialRevisions;
+    }
+
+    private void assertModificationAreEqual(Modification actual, Modification expected) {
+        assertThat(actual.getRevision(), is(expected.getRevision()));
+        assertThat(actual.getModifiedTime().getTime(), is(expected.getModifiedTime().getTime()));
+        assertThat(actual.getComment(), is(expected.getComment()));
+        assertThat(actual.getUserName(), is(expected.getUserName()));
+        assertThat(actual.getEmailAddress(), is(expected.getEmailAddress()));
+    }
+
+    private void assertModificationAreEqualWithId(Modification actual, Modification expected) {
+        assertThat(actual.getId(), is(expected.getId()));
+        assertModificationAreEqual(actual, expected);
     }
 
     private ArrayList<Modification> getModifications(int count) {

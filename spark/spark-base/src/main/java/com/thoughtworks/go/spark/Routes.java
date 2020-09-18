@@ -20,6 +20,7 @@ import org.apache.commons.lang3.text.StrSubstitutor;
 
 import static com.google.common.collect.ImmutableMap.of;
 import static com.thoughtworks.go.CurrentGoCDVersion.apiDocsUrl;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 public class Routes {
 
@@ -108,6 +109,7 @@ public class Routes {
         public static final String DEFINITIONS_PATH = REPO_PATH + "/definitions";
         public static final String STATUS_PATH = REPO_PATH + "/status";
         public static final String TRIGGER_UPDATE_PATH = REPO_PATH + "/trigger_update";
+        public static final String CHECK_CONNECTION_PATH = REPO_PATH + "/material_test";
 
         // For building _links entry in API response
         public static String find() {
@@ -910,5 +912,39 @@ public class Routes {
 
     public class MaterialsSPA {
         public static final String BASE = "/materials";
+    }
+
+    public static class InternalMaterialConfig {
+        public static final String INTERNAL_BASE = "/api/internal/materials";
+        public static final String USAGES = "/:fingerprint/usages";
+        public static final String TRIGGER_UPDATE = "/:fingerprint/trigger_update";
+
+        public static final String INTERNAL_BASE_MODIFICATIONS = "/api/internal/materials/:fingerprint/modifications";
+
+        public static String usages(String fingerprint) {
+            return (MaterialConfig.BASE + USAGES).replaceAll(":fingerprint", fingerprint);
+        }
+
+        public static String previous(String pipelineName, long before, String pattern, Integer pageSize) {
+            String link = INTERNAL_BASE_MODIFICATIONS.replaceAll(":fingerprint", pipelineName) + "?before=" + before;
+            link = appendQueryString(link, pattern, pageSize);
+            return link;
+        }
+
+        public static String next(String pipelineName, long after, String pattern, Integer pageSize) {
+            String link = INTERNAL_BASE_MODIFICATIONS.replaceAll(":fingerprint", pipelineName) + "?after=" + after;
+            link = appendQueryString(link, pattern, pageSize);
+            return link;
+        }
+
+        private static String appendQueryString(String link, String pattern, Integer pageSize) {
+            if (pageSize > 10) {
+                link += "&page_size=" + pageSize;
+            }
+            if (isNotBlank(pattern)) {
+                link += "&pattern=" + UrlEscapers.urlFormParameterEscaper().escape(pattern);
+            }
+            return link;
+        }
     }
 }
